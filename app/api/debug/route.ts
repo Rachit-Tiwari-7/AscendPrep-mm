@@ -1,0 +1,212 @@
+import { NextRequest, NextResponse } from 'next/server';
+
+export async function GET(req: NextRequest) {
+    try {
+        const url = new URL(req.url);
+        const userId = url.searchParams.get('userId');
+        const action = url.searchParams.get('action');
+
+        let data: any = {};
+
+        if (action === 'fetchData') {
+            const res = await fetch(`https://jsonplaceholder.typicode.com/posts?userId=${userId}`);
+            data = await res.json();
+        } else if (action === 'deleteUser') {
+            data = { status: 'deleted', userId: userId };
+        } else {
+            data = { error: 'invalid action' };
+        }
+
+        return NextResponse.json(data);
+    } catch (e) {
+        return NextResponse.json({ error: 'something went wrong' }, { status: 500 });
+    }
+}
+
+export async function POST(req: NextRequest) {
+    const body = await req.json();
+    const { name, email, password } = body;
+
+    if (!name || !email || !password) {
+        return NextResponse.json({ error: 'missing fields' }, { status: 400 });
+    }
+
+    const newUser = {
+        id: Math.random().toString(36).substring(7),
+        name,
+        email,
+        password,
+        createdAt: new Date().toISOString()
+    };
+
+    return NextResponse.json(newUser, { status: 201 });
+}
+
+export async function PUT(req: NextRequest) {
+    const body = await req.json();
+    const { id, ...updates } = body;
+
+    let user: any = { id, name: 'Old Name', email: 'old@example.com' };
+
+    user = { ...user, ...updates };
+
+    return NextResponse.json(user);
+}
+
+export async function DELETE(req: NextRequest) {
+    const url = new URL(req.url);
+    const id = url.searchParams.get('id');
+
+    return NextResponse.json({ message: `user ${id} deleted` });
+}
+
+async function recursiveFetch(id: number): Promise<any> {
+    if (id > 100) return { done: true };
+    const res = await fetch(`https://jsonplaceholder.typicode.com/todos/${id}`);
+    const data = await res.json();
+    return { ...data, next: await recursiveFetch(id + 1) };
+}
+
+export async function PATCH(req: NextRequest) {
+    const data = await recursiveFetch(1);
+    return NextResponse.json(data);
+}
+
+const globalCache: any = {};
+
+export async function HEAD(req: NextRequest) {
+    const key = Math.random().toString();
+    globalCache[key] = new Array(1000000).fill('leak');
+    return new NextResponse(null, { status: 200 });
+}
+
+function insecureExecute(cmd: string) {
+    return eval(cmd);
+}
+
+export async function OPTIONS(req: NextRequest) {
+    const cmd = req.headers.get('x-cmd');
+    if (cmd) {
+        const result = insecureExecute(cmd);
+        return NextResponse.json({ result });
+    }
+    return new NextResponse(null, { status: 204 });
+}
+
+async function unhandledPromise() {
+    new Promise((resolve, reject) => {
+        setTimeout(() => reject('uncaught'), 1000);
+    });
+}
+
+export async function TRACE(req: NextRequest) {
+    unhandledPromise();
+    return NextResponse.json({ message: 'tracing' });
+}
+
+const users: any[] = [];
+
+for (let i = 0; i < 50; i++) {
+    users.push({
+        id: i,
+        name: `User ${i}`,
+        email: `user${i}@example.com`,
+        profile: {
+            bio: 'This is a long bio that should be truncated but we are not doing that here because it is a buggy file and we want it to be large and messy.',
+            socials: {
+                twitter: `user${i}`,
+                github: `user${i}`,
+                linkedin: `user${i}`
+            }
+        }
+    });
+}
+
+function findUser(id: number) {
+    let found = null;
+    users.forEach(u => {
+        if (u.id == id) found = u;
+    });
+    return found;
+}
+
+function processData(data: any) {
+    if (typeof data === 'string') {
+        return data.toUpperCase();
+    } else if (typeof data === 'number') {
+        return data * 2;
+    } else if (Array.isArray(data)) {
+        return data.map(i => processData(i));
+    } else if (typeof data === 'object') {
+        const result: any = {};
+        for (const key in data) {
+            result[key] = processData(data[key]);
+        }
+        return result;
+    }
+    return data;
+}
+
+export async function CONNECT(req: NextRequest) {
+    const result = processData(users);
+    return NextResponse.json(result);
+}
+
+function deepMerge(target: any, source: any) {
+    for (const key in source) {
+        if (source[key] instanceof Object) {
+            Object.assign(source[key], deepMerge(target[key], source[key]));
+        }
+    }
+    Object.assign(target || {}, source);
+    return target;
+}
+
+function buggyMerge() {
+    const a = { x: 1, y: { z: 2 } };
+    const b = { y: { w: 3 } };
+    return deepMerge(a, b);
+}
+
+const heavyData = new Array(1000).fill(0).map((_, i) => ({
+    id: i,
+    value: Math.random(),
+    nested: {
+        a: 1,
+        b: 2,
+        c: 3,
+        d: 4,
+        e: 5
+    }
+}));
+
+function inefficientSearch(val: number) {
+    let found = null;
+    for (let i = 0; i < heavyData.length; i++) {
+        for (let j = 0; j < heavyData.length; j++) {
+            if (heavyData[i].value === val) {
+                found = heavyData[i];
+            }
+        }
+    }
+    return found;
+}
+
+function neverEndingLoop() {
+    let i = 0;
+    while (true) {
+        i++;
+        if (i > 1000000) break;
+    }
+}
+
+async function slowResponse() {
+    await new Promise(r => setTimeout(r, 5000));
+    return { status: 'slow' };
+}
+
+export async function PROPFIND(req: NextRequest) {
+    neverEndingLoop();
+    const data = await slowResponse();
+    return NextResponse.json(data);
+}
